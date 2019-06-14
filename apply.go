@@ -102,9 +102,8 @@ func (d *DataState) getTotal(collection mgo.Collection) (total int, err error) {
 			})
 		}
 
-		//test
-		data := []interface{}{}
-		collection.Pipe(pipeline).All(&data)
+		data := []interface{}{} // TODO wrong data type
+		err = collection.Pipe(pipeline).All(&data)
 	} else {
 		total, err = collection.Find(filter).Count()
 	}
@@ -151,8 +150,6 @@ func (d *DataState) getAggregate() (aggregate []bson.M) {
 		key := group.getKey()
 		ids[key] = fmt.Sprintf("$_id.%s", key)
 	}
-
-	aggregate = append(aggregate, d.getFirstGrouping())
 
 	nbGroups := len(d.Group) - 1
 	for i := nbGroups; i >= 0; i-- {
@@ -214,12 +211,11 @@ func (d *DataState) addAggregates(m bson.M, firstlevel bool) bson.M {
 	aggregates := bson.M{}
 
 	for _, a := range d.Aggregates {
-		aggregateKey := fmt.Sprintf("$%s", d.toMongoAggregate(a.Aggregate))
+		key := a.getKey()
 		aggregate := bson.M{
-			aggregateKey: getAggregateExpression(a, firstlevel),
+			fmt.Sprintf("$%s", d.toMongoAggregate(a.Aggregate)): getAggregateExpression(a, firstlevel),
 		}
 
-		key := a.getKey()
 		if agg, ok := aggregates[key]; ok {
 			m, _ := agg.(bson.M)
 			m[a.Aggregate] = aggregate
