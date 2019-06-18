@@ -2,6 +2,7 @@ package kendo
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/globalsign/mgo"
 	"github.com/globalsign/mgo/bson"
@@ -17,7 +18,7 @@ func (d *DataState) Apply(collection mgo.Collection) (dataResult DataResult) {
 		return
 	}
 
-	aggregate := collection.Pipe(d.GetPipeline())
+	aggregate := collection.Pipe(d.getPipeline())
 
 	data := []interface{}{}
 	err = aggregate.All(&data)
@@ -29,32 +30,42 @@ func (d *DataState) Apply(collection mgo.Collection) (dataResult DataResult) {
 	}
 }
 
-func (d *DataState) GetPipeline() (pipeline []bson.M) {
+func (d *DataState) getBasePipeline() (pipeline []bson.M) {
 
-	pipeline = []bson.M{}
+	pipeline = []bson.M{
+		{
+			"$addFields": bson.M{
+				"id": "$_id",
+			},
+		},
+		{
+			"$project": bson.M{
+				"_id": 0,
+			},
+		},
+	}
 
 	if len(d.preprocessing) > 0 {
 		pipeline = append(pipeline, d.preprocessing...)
 	}
 
-	if len(d.Lookup) > 0 {
-		pipeline = append(pipeline, d.getLookup()...)
-	}
+	return
+}
 
-	//replace _id by id
-	pipeline = append(pipeline, bson.M{"$addFields": bson.M{
-		"id": "$_id",
-	}})
-	pipeline = append(pipeline, bson.M{"$project": bson.M{
-		"_id": 0,
-	}})
+func (d *DataState) getPipeline() (pipeline []bson.M) {
+
+	pipeline = d.getBasePipeline()
+
+	if len(d.Lookup) > 0 {
+		pipeline = append(pipeline, d.getLookups()...)
+	}
 
 	if len(d.Filter.Filters) > 0 {
 		pipeline = append(pipeline, bson.M{"$match": d.getFilter()})
 	}
 
 	if len(d.Group) > 0 {
-		pipeline = append(pipeline, d.getAggregate()...)
+		pipeline = append(pipeline, d.getGroups()...)
 		pipeline = append(pipeline, d.getProject())
 	}
 
@@ -63,17 +74,13 @@ func (d *DataState) GetPipeline() (pipeline []bson.M) {
 	}
 
 	if d.PageSize > 0 {
-		page := d.Page - 1
-		pipeline = append(pipeline, []bson.M{
-			bson.M{"$skip": page * d.PageSize},
-			bson.M{"$limit": d.PageSize},
-		}...)
+		pipeline = append(pipeline, d.getPaging()...)
 	}
 
 	return
 }
 
-func (d *DataState) getTotal(collection mgo.Collection) (total int, err error) {
+func (d *DataState) getTotalPipeline() (pipeline []bson.M) {
 
 	lookupsMap := map[string]LookupDescriptor{}
 	for _, lookup := range d.Lookup {
@@ -83,14 +90,15 @@ func (d *DataState) getTotal(collection mgo.Collection) (total int, err error) {
 	// apply lookups only if needed by filter
 	lookupsToApply := []LookupDescriptor{}
 	for _, f := range d.Filter.Filters {
-		if lookup, found := lookupsMap[f.Field]; found {
+		rootKey := strings.Split(f.Field, ".")[0]
+		if lookup, found := lookupsMap[rootKey]; found {
 			lookupsToApply = append(lookupsToApply, lookup)
 		}
 	}
 
-	filter := d.getFilter()
+	pipeline = d.getBasePipeline()
+
 	if len(lookupsToApply) > 0 {
-		pipeline := []bson.M{}
 		for _, l := range d.Lookup {
 			pipeline = append(pipeline, bson.M{
 				"$lookup": bson.M{
@@ -101,22 +109,35 @@ func (d *DataState) getTotal(collection mgo.Collection) (total int, err error) {
 				},
 			})
 		}
-
-		data := []interface{}{} // TODO wrong data type
-		err = collection.Pipe(pipeline).All(&data)
-	} else {
-		total, err = collection.Find(filter).Count()
 	}
+
+	if len(d.Filter.Filters) > 0 {
+		pipeline = append(pipeline, bson.M{"$match": d.getFilter()})
+	}
+
+	pipeline = append(pipeline, bson.M{
+		"$count": "total",
+	})
 
 	return
 }
 
-func (d *DataState) getLookup() (lookup []bson.M) {
+func (d *DataState) getTotal(collection mgo.Collection) (total int, err error) {
 
-	lookup = []bson.M{}
+	var data struct {
+		Total int `bson:"total"`
+	}
+	err = collection.Pipe(d.getTotalPipeline()).One(&data)
+
+	return data.Total, err
+}
+
+func (d *DataState) getLookups() (lookups []bson.M) {
+
+	lookups = []bson.M{}
 
 	for _, l := range d.Lookup {
-		lookup = append(lookup, bson.M{
+		lookups = append(lookups, bson.M{
 			"$lookup": bson.M{
 				"from":         l.From,
 				"localField":   l.LocalField,
@@ -125,7 +146,7 @@ func (d *DataState) getLookup() (lookup []bson.M) {
 			},
 		})
 		if l.Single { // should be single doc instead of array
-			lookup = append(lookup, bson.M{
+			lookups = append(lookups, bson.M{
 				"$addFields": bson.M{
 					l.As: bson.M{
 						"$ifNull": []interface{}{
@@ -141,9 +162,9 @@ func (d *DataState) getLookup() (lookup []bson.M) {
 	return
 }
 
-func (d *DataState) getAggregate() (aggregate []bson.M) {
+func (d *DataState) getGroups() (groups []bson.M) {
 
-	aggregate = []bson.M{}
+	groups = []bson.M{}
 
 	ids := bson.M{}
 	for _, group := range d.Group {
@@ -156,28 +177,28 @@ func (d *DataState) getAggregate() (aggregate []bson.M) {
 		group := d.Group[i]
 		key := group.getKey()
 
-		sortId := fmt.Sprintf("_id.%s", key)
+		sortKey := fmt.Sprintf("_id.%s", key)
 
 		if (nbGroups) == i {
-			aggregate = append(aggregate, d.getFirstGrouping())
+			groups = append(groups, d.getFirstGrouping())
 		} else {
 			previousGroup := d.Group[i+1]
 			previousField := previousGroup.Field
 			previousKey := previousGroup.getKey()
 			var groupKey interface{}
 			if i == 0 {
-				sortId = fmt.Sprintf("_id")
+				sortKey = "_id"
 				groupKey = fmt.Sprintf("$_id.%s", key)
 			} else {
 				delete(ids, previousKey)
 				groupKey = copyM(ids) //map elements are by reference we have to copy
 			}
-			aggregate = append(aggregate, d.getGroup(groupKey, previousKey, previousField, i))
+			groups = append(groups, d.getGroup(groupKey, previousKey, previousField, i))
 		}
 
-		aggregate = append(aggregate, bson.M{
+		groups = append(groups, bson.M{
 			"$sort": bson.M{
-				sortId: getSort(group.Dir),
+				sortKey: group.getSort(),
 			},
 		})
 	}
@@ -189,9 +210,8 @@ func (d *DataState) getFirstGrouping() (group bson.M) {
 
 	ids := bson.M{}
 	for _, group := range d.Group {
-		f := group.Field
 		key := group.getKey()
-		ids[key] = fmt.Sprintf("$%s", f)
+		ids[key] = fmt.Sprintf("$%s", group.Field)
 	}
 
 	group = bson.M{
@@ -206,14 +226,14 @@ func (d *DataState) getFirstGrouping() (group bson.M) {
 	return
 }
 
-func (d *DataState) addAggregates(m bson.M, firstlevel bool) bson.M {
+func (d *DataState) addAggregates(m bson.M, isLast bool) bson.M {
 
 	aggregates := bson.M{}
 
 	for _, a := range d.Aggregates {
 		key := a.getKey()
 		aggregate := bson.M{
-			fmt.Sprintf("$%s", d.toMongoAggregate(a.Aggregate)): getAggregateExpression(a, firstlevel),
+			a.getAggregate(): a.getExpression(isLast),
 		}
 
 		if agg, ok := aggregates[key]; ok {
@@ -236,35 +256,12 @@ func (d *DataState) addAggregates(m bson.M, firstlevel bool) bson.M {
 	return m
 }
 
-func getAggregateExpression(a AggregateDescriptor, firstlevel bool) (expression string) {
-
-	if firstlevel {
-		expression = fmt.Sprintf("$items.%s", a.Field)
-	} else {
-		expression = fmt.Sprintf("$items.aggregates.%s.%s", a.getKey(), a.Aggregate)
-	}
-
-	return
-}
-
-func (d *DataState) toMongoAggregate(s string) (a string) {
-
-	switch s {
-	case "average":
-		a = "avg"
-	default:
-		a = s
-	}
-
-	return
-}
-
 func (d *DataState) getProject() (project bson.M) {
 	firstGroup := d.Group[0]
 
 	value := "$_id"
-	singleGroup := (len(d.Group) == 1)
-	if singleGroup {
+	isLast := (len(d.Group) == 1)
+	if isLast {
 		value = fmt.Sprintf("$_id.%s", firstGroup.getKey())
 	}
 	project = bson.M{
@@ -273,7 +270,7 @@ func (d *DataState) getProject() (project bson.M) {
 			"value": value,
 			"items": "$items",
 			"field": firstGroup.Field,
-		}, singleGroup),
+		}, isLast),
 	}
 
 	return
@@ -307,7 +304,7 @@ func (d *DataState) getFilter() (filter bson.M) {
 }
 
 func (d *DataState) getGroup(id interface{}, value string, field string, depth int) (group bson.M) {
-	isSecondGroup := (len(d.Group) - 2) == depth
+	isLast := (len(d.Group) - 2) == depth
 	group = bson.M{
 		"$group": bson.M{
 			"_id": id,
@@ -316,7 +313,7 @@ func (d *DataState) getGroup(id interface{}, value string, field string, depth i
 					"value": fmt.Sprintf("$_id.%s", value),
 					"items": "$items",
 					"field": field,
-				}, isSecondGroup),
+				}, isLast),
 			},
 		},
 	}
@@ -324,21 +321,11 @@ func (d *DataState) getGroup(id interface{}, value string, field string, depth i
 	return
 }
 
-func copyM(m bson.M) (copy bson.M) {
-	copy = bson.M{}
-	for k, v := range m {
-		copy[k] = v
+func (d *DataState) getPaging() (paging []bson.M) {
+	page := d.Page - 1
+
+	return []bson.M{
+		bson.M{"$skip": page * d.PageSize},
+		bson.M{"$limit": d.PageSize},
 	}
-
-	return
-}
-
-func getSort(s string) (i int) {
-
-	i = 1
-	if s == "desc" {
-		i = -1
-	}
-
-	return
 }

@@ -6,5 +6,6 @@
 
 ## Limitations
 
-* Does not support multiple sortss
+* Does not support multiple sorts on base columns BUT supports multiple sorted groups
 * Only supports `and` filter conditions
+* Only supports `avg` aggregates

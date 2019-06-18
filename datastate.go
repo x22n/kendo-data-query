@@ -1,6 +1,7 @@
 package kendo
 
 import (
+	"fmt"
 	"net/url"
 	"strings"
 
@@ -17,6 +18,24 @@ type AggregateDescriptor struct {
 	Field     string
 }
 
+func (ad AggregateDescriptor) getExpression(isRoot bool) string {
+	expression := fmt.Sprintf("$items.aggregates.%s.%s", ad.getKey(), ad.Aggregate)
+	if isRoot {
+		expression = fmt.Sprintf("$items.%s", ad.Field)
+	}
+
+	return expression
+}
+
+func (ad AggregateDescriptor) getAggregate() string {
+	key := ad.Aggregate
+	if key == "average" {
+		key = "avg"
+	}
+
+	return fmt.Sprintf("$%s", key)
+}
+
 func (ad AggregateDescriptor) getKey() string {
 	return sanitizeKey(ad.Field)
 }
@@ -31,6 +50,14 @@ func (gd GroupDescriptor) getKey() string {
 	return sanitizeKey(gd.Field)
 }
 
+func (gd GroupDescriptor) getSort() int {
+	sort := 1
+	if gd.Dir == "desc" {
+		sort = -1
+	}
+
+	return sort
+}
 
 type FilterDescriptor struct {
 	Field      string
@@ -45,7 +72,7 @@ type CompositeFilterDescriptor struct {
 }
 
 //Not part of kendo data query api
-type LookupDescriptor struct {  // TODO add toMongo method
+type LookupDescriptor struct { // TODO add toMongo method
 	From         string
 	LocalField   string
 	ForeignField string
@@ -65,7 +92,6 @@ type DataState struct {
 	replacements  map[string]string
 	preprocessing []bson.M
 }
-
 
 func sanitizeKey(s string) string {
 	return strings.Replace(s, ".", "", -1)

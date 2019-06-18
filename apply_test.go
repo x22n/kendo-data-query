@@ -9,58 +9,68 @@ import (
 
 func TestDataState(t *testing.T) {
 
-	t.Run("GetPipeline", func(t *testing.T) {
-		ds := DataState{
-			Lookup: []LookupDescriptor{
-				{
-					From:         "vendors",
-					LocalField:   "vendorId",
-					ForeignField: "_id",
-					As:           "vendor",
-					Single:       true,
-				},
-				{
-					From:         "resellers",
-					LocalField:   "vendor.resellerId",
-					ForeignField: "_id",
-					As:           "reseller",
-					Single:       true,
-				},
-			},
-			Aggregates: []AggregateDescriptor{
-				AggregateDescriptor{
-					Aggregate: "average",
-					Field:     "commission.due",
-				},
-				AggregateDescriptor{
-					Aggregate: "sum",
-					Field:     "commission.due",
-				},
-			},
-			Filter: CompositeFilterDescriptor{
-				Logic: "and",
-				Filters: []FilterDescriptor{
-					FilterDescriptor{
-						Field:    "data.email",
-						Operator: "contains",
-						Value:    "a",
+	t.Run("getPipeline", func(t *testing.T) {
+		t.Run("Should return the correct complex pipeline", func(t *testing.T) {
+			ds := DataState{
+				Lookup: []LookupDescriptor{
+					{
+						From:         "vendors",
+						LocalField:   "vendorId",
+						ForeignField: "_id",
+						As:           "vendor",
+						Single:       true,
+					},
+					{
+						From:         "resellers",
+						LocalField:   "vendor.resellerId",
+						ForeignField: "_id",
+						As:           "reseller",
+						Single:       true,
 					},
 				},
-			},
-			Group: []GroupDescriptor{
-				GroupDescriptor{
-					Field: "data.email",
-					Dir:   "asc",
+				Aggregates: []AggregateDescriptor{
+					AggregateDescriptor{
+						Aggregate: "average",
+						Field:     "commission.due",
+					},
+					AggregateDescriptor{
+						Aggregate: "sum",
+						Field:     "commission.due",
+					},
 				},
-				GroupDescriptor{
-					Field: "vendor.email",
-					Dir:   "desc",
+				Filter: CompositeFilterDescriptor{
+					Logic: "and",
+					Filters: []FilterDescriptor{
+						FilterDescriptor{
+							Field:    "data.email",
+							Operator: "contains",
+							Value:    "a",
+						},
+					},
 				},
-			},
-		}
+				Group: []GroupDescriptor{
+					GroupDescriptor{
+						Field: "data.email",
+						Dir:   "asc",
+					},
+					GroupDescriptor{
+						Field: "vendor.email",
+						Dir:   "desc",
+					},
+				},
+			}
 
-		t.Run("Should return the correct pipeline", func(t *testing.T) {
 			wantPipeline := []bson.M{
+				bson.M{
+					"$addFields": bson.M{
+						"id": "$_id",
+					},
+				},
+				bson.M{
+					"$project": bson.M{
+						"_id": 0,
+					},
+				},
 				bson.M{
 					"$lookup": bson.M{
 						"as":           "vendor",
@@ -95,16 +105,6 @@ func TestDataState(t *testing.T) {
 								nil,
 							},
 						},
-					},
-				},
-				bson.M{
-					"$addFields": bson.M{
-						"id": "$_id",
-					},
-				},
-				bson.M{
-					"$project": bson.M{
-						"_id": 0,
 					},
 				},
 				bson.M{
@@ -178,8 +178,138 @@ func TestDataState(t *testing.T) {
 				},
 			}
 
-			if gotPipeline := ds.GetPipeline(); !reflect.DeepEqual(gotPipeline, wantPipeline) {
-				t.Errorf("DataState.GetPipeline() = %v, want %v", gotPipeline, wantPipeline)
+			if gotPipeline := ds.getPipeline(); !reflect.DeepEqual(gotPipeline, wantPipeline) {
+				t.Errorf("DataState.getPipeline() = %v, want %v", gotPipeline, wantPipeline)
+			}
+		})
+
+		t.Run("Should return ascending sort", func(t *testing.T) {
+			ds := DataState{
+				Sort: []SortDescriptor{
+					{
+						Dir:   "asc",
+						Field: "name",
+					},
+				},
+			}
+			wantPipeline := []bson.M{
+				bson.M{
+					"$addFields": bson.M{
+						"id": "$_id",
+					},
+				},
+				bson.M{
+					"$project": bson.M{
+						"_id": 0,
+					},
+				},
+				bson.M{
+					"$sort": bson.M{
+						"name": 1,
+					},
+				},
+			}
+
+			if gotPipeline := ds.getPipeline(); !reflect.DeepEqual(gotPipeline, wantPipeline) {
+				t.Errorf("DataState.getPipeline() = %v, want %v", gotPipeline, wantPipeline)
+			}
+		})
+
+		t.Run("Should return descending sort", func(t *testing.T) {
+			ds := DataState{
+				Sort: []SortDescriptor{
+					{
+						Dir:   "desc",
+						Field: "name",
+					},
+				},
+			}
+			wantPipeline := []bson.M{
+				bson.M{
+					"$addFields": bson.M{
+						"id": "$_id",
+					},
+				},
+				bson.M{
+					"$project": bson.M{
+						"_id": 0,
+					},
+				},
+				bson.M{
+					"$sort": bson.M{
+						"name": -1,
+					},
+				},
+			}
+
+			if gotPipeline := ds.getPipeline(); !reflect.DeepEqual(gotPipeline, wantPipeline) {
+				t.Errorf("DataState.getPipeline() = %v, want %v", gotPipeline, wantPipeline)
+			}
+		})
+	})
+
+	t.Run("getSortFields", func(t *testing.T) {
+		t.Run("Should return ascending sort", func(t *testing.T) {
+			ds := DataState{
+				Sort: []SortDescriptor{
+					{
+						Dir:   "asc",
+						Field: "name",
+					},
+				},
+			}
+
+			wantSortFields := bson.M{
+				"$sort": bson.M{
+					"name": 1,
+				},
+			}
+
+			if gotSortFields := ds.getSortFields(); !reflect.DeepEqual(gotSortFields, wantSortFields) {
+				t.Errorf("DataState.getSortFields() = %v, want %v", gotSortFields, wantSortFields)
+			}
+		})
+
+		t.Run("Should return descending sort", func(t *testing.T) {
+			ds := DataState{
+				Sort: []SortDescriptor{
+					{
+						Dir:   "desc",
+						Field: "name",
+					},
+				},
+			}
+
+			wantSortFields := bson.M{
+				"$sort": bson.M{
+					"name": -1,
+				},
+			}
+
+			if gotSortFields := ds.getSortFields(); !reflect.DeepEqual(gotSortFields, wantSortFields) {
+				t.Errorf("DataState.getSortFields() = %v, want %v", gotSortFields, wantSortFields)
+			}
+		})
+	})
+
+	t.Run("getPaging", func(t *testing.T) {
+		t.Run("Should return skip and limit equal to requested page", func(t *testing.T) {
+			ds := DataState{
+				Page:     3,
+				PageSize: 10,
+			}
+
+			wantPaging := []bson.M{
+				{
+					"$skip": 20,
+				},
+				{
+					"$limit": 10,
+				},
+			}
+
+			if gotPaging := ds.getPaging(); !reflect.DeepEqual(gotPaging, wantPaging) {
+				t.Errorf("DataState.getPaging() = %v, want %v", gotPaging, wantPaging)
 			}
 		})
 	})
