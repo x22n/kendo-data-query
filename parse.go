@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	TIME_LAYOUT      = "2006-01-02T15-04-05"
+	TIME_LAYOUT        = "2006-01-02T15-04-05"
 	TOKENS_PER_FILTERS = 4
 )
 
@@ -105,7 +105,7 @@ func (d *DataState) parseFilterDescriptors() (err error) {
 
 	d.Filter.Filters = filters
 	if nbFilters > 1 {
-		d.Filter.Logic = "and"
+		d.Filter.Logic = "and" //TODO support "or" logic
 	}
 
 	return
