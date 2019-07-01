@@ -29,7 +29,7 @@ func NewDataStateFromRequest(request *http.Request) (dataState *DataState, err e
 	return
 }
 
-// WithReplacements adds field replacements to the DataState
+// WithReplacements adds field replacements to the DataState.
 // For example map[string]string{ "_id": "id" }
 func (d *DataState) WithReplacements(replacements map[string]string) {
 	d.replacements = replacements

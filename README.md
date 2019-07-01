@@ -57,7 +57,6 @@ func MyHandler(w http.ResponseWriter, r *http.Request) {
 
 ## Roadmap
 
-- Better godoc
 - Support for `or` logic between filters
 - Support for complex/nested filters
 - Support for more aggregates
