@@ -7,8 +7,7 @@ import (
 	"github.com/globalsign/mgo/bson"
 )
 
-//TODO use list of operator
-func (f *FilterDescriptor) Filter(filter bson.M) {
+func (f *FilterDescriptor) filter(filter bson.M) { //TODO use list of operator
 	operator := f.Operator
 	value := f.Value
 	field := f.Field

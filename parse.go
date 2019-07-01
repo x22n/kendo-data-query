@@ -11,10 +11,11 @@ import (
 )
 
 const (
-	TIME_LAYOUT        = "2006-01-02T15-04-05"
-	TOKENS_PER_FILTERS = 4
+	TimeLayout      = "2006-01-02T15-04-05"
+	TokensPerFilter = 4
 )
 
+// NewDataStateFromRequest creates a *DataState from the query parameters of the request
 func NewDataStateFromRequest(request *http.Request) (dataState *DataState, err error) {
 
 	values, err := url.ParseQuery(request.URL.RawQuery)
@@ -28,14 +29,18 @@ func NewDataStateFromRequest(request *http.Request) (dataState *DataState, err e
 	return
 }
 
+// WithReplacements adds field replacements to the DataState
+// For example map[string]string{ "_id": "id" }
 func (d *DataState) WithReplacements(replacements map[string]string) {
 	d.replacements = replacements
 }
 
+// WithLookups adds LookupDescriptors to the DataState
 func (d *DataState) WithLookups(lookups []LookupDescriptor) {
 	d.Lookup = lookups
 }
 
+// WithPreprocessing adds pipeline steps to the DataState that are executed before any other steps
 func (d *DataState) WithPreprocessing(preprocessing []bson.M) {
 	d.preprocessing = preprocessing
 }
@@ -85,10 +90,10 @@ func (d *DataState) parseFilterDescriptors() (err error) {
 
 	tokens := tokenize(filter, "~")
 	nbTokens := len(tokens)
-	nbFilters := (nbTokens / TOKENS_PER_FILTERS) + 1
+	nbFilters := (nbTokens / TokensPerFilter) + 1
 	filters := make([]FilterDescriptor, nbFilters)
-	for i := 0; i < nbTokens; i += TOKENS_PER_FILTERS {
-		idx := i / TOKENS_PER_FILTERS
+	for i := 0; i < nbTokens; i += TokensPerFilter {
+		idx := i / TokensPerFilter
 
 		var value interface{}
 		value, err = toValue(tokens[i+2])
@@ -197,7 +202,7 @@ func toValue(s string) (value interface{}, err error) {
 
 	s = strings.TrimSuffix(s, "'")
 	if d := strings.TrimPrefix(s, "datetime'"); d != s {
-		value, err = time.Parse(TIME_LAYOUT, d)
+		value, err = time.Parse(TimeLayout, d)
 	} else if strings.HasPrefix(s, "'") == false {
 		value, err = strconv.ParseFloat(s, 64)
 	} else {

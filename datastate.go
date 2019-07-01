@@ -71,7 +71,6 @@ type CompositeFilterDescriptor struct {
 	Filters []FilterDescriptor //could also be a CompositeFilterDescriptor
 }
 
-//Not part of kendo data query api
 type LookupDescriptor struct { // TODO add toMongo method
 	From         string
 	LocalField   string

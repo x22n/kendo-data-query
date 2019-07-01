@@ -29,11 +29,11 @@ func TestDataState(t *testing.T) {
 					},
 				},
 				Aggregates: []AggregateDescriptor{
-					AggregateDescriptor{
+					{
 						Aggregate: "average",
 						Field:     "commission.due",
 					},
-					AggregateDescriptor{
+					{
 						Aggregate: "sum",
 						Field:     "commission.due",
 					},
@@ -41,7 +41,7 @@ func TestDataState(t *testing.T) {
 				Filter: CompositeFilterDescriptor{
 					Logic: "and",
 					Filters: []FilterDescriptor{
-						FilterDescriptor{
+						{
 							Field:    "data.email",
 							Operator: "contains",
 							Value:    "a",
@@ -49,11 +49,11 @@ func TestDataState(t *testing.T) {
 					},
 				},
 				Group: []GroupDescriptor{
-					GroupDescriptor{
+					{
 						Field: "data.email",
 						Dir:   "asc",
 					},
-					GroupDescriptor{
+					{
 						Field: "vendor.email",
 						Dir:   "desc",
 					},
@@ -61,17 +61,17 @@ func TestDataState(t *testing.T) {
 			}
 
 			wantPipeline := []bson.M{
-				bson.M{
+				{
 					"$addFields": bson.M{
 						"id": "$_id",
 					},
 				},
-				bson.M{
+				{
 					"$project": bson.M{
 						"_id": 0,
 					},
 				},
-				bson.M{
+				{
 					"$lookup": bson.M{
 						"as":           "vendor",
 						"from":         "vendors",
@@ -79,7 +79,7 @@ func TestDataState(t *testing.T) {
 						"foreignField": "_id",
 					},
 				},
-				bson.M{
+				{
 					"$addFields": bson.M{
 						"vendor": bson.M{
 							"$ifNull": []interface{}{
@@ -89,7 +89,7 @@ func TestDataState(t *testing.T) {
 						},
 					},
 				},
-				bson.M{
+				{
 					"$lookup": bson.M{
 						"from":         "resellers",
 						"localField":   "vendor.resellerId",
@@ -97,7 +97,7 @@ func TestDataState(t *testing.T) {
 						"foreignField": "_id",
 					},
 				},
-				bson.M{
+				{
 					"$addFields": bson.M{
 						"reseller": bson.M{
 							"$ifNull": []interface{}{
@@ -107,7 +107,7 @@ func TestDataState(t *testing.T) {
 						},
 					},
 				},
-				bson.M{
+				{
 					"$match": bson.M{
 						"data.email": bson.M{
 							"$regex":   "a",
@@ -115,7 +115,7 @@ func TestDataState(t *testing.T) {
 						},
 					},
 				},
-				bson.M{
+				{
 					"$group": bson.M{
 						"_id": bson.M{
 							"dataemail":   "$data.email",
@@ -126,12 +126,12 @@ func TestDataState(t *testing.T) {
 						},
 					},
 				},
-				bson.M{
+				{
 					"$sort": bson.M{
 						"_id.vendoremail": -1,
 					},
 				},
-				bson.M{
+				{
 					"$group": bson.M{
 						"_id": "$_id.dataemail",
 						"items": bson.M{
@@ -153,12 +153,12 @@ func TestDataState(t *testing.T) {
 						},
 					},
 				},
-				bson.M{
+				{
 					"$sort": bson.M{
 						"_id": 1,
 					},
 				},
-				bson.M{
+				{
 					"$project": bson.M{
 						"value": "$_id",
 						"items": "$items",
@@ -193,17 +193,17 @@ func TestDataState(t *testing.T) {
 				},
 			}
 			wantPipeline := []bson.M{
-				bson.M{
+				{
 					"$addFields": bson.M{
 						"id": "$_id",
 					},
 				},
-				bson.M{
+				{
 					"$project": bson.M{
 						"_id": 0,
 					},
 				},
-				bson.M{
+				{
 					"$sort": bson.M{
 						"name": 1,
 					},
@@ -225,17 +225,17 @@ func TestDataState(t *testing.T) {
 				},
 			}
 			wantPipeline := []bson.M{
-				bson.M{
+				{
 					"$addFields": bson.M{
 						"id": "$_id",
 					},
 				},
-				bson.M{
+				{
 					"$project": bson.M{
 						"_id": 0,
 					},
 				},
-				bson.M{
+				{
 					"$sort": bson.M{
 						"name": -1,
 					},
@@ -310,6 +310,116 @@ func TestDataState(t *testing.T) {
 
 			if gotPaging := ds.getPaging(); !reflect.DeepEqual(gotPaging, wantPaging) {
 				t.Errorf("DataState.getPaging() = %v, want %v", gotPaging, wantPaging)
+			}
+		})
+	})
+
+	t.Run("getTotalPipeline", func(t *testing.T) {
+		t.Run("Should return the base pipeline and $count if there is no filter or lookups", func(t *testing.T) {
+			ds := DataState{}
+
+			wantTotalPipeline := append(ds.getBasePipeline(), bson.M{
+				"$count": "total",
+			})
+
+			if gotTotalPipeline := ds.getTotalPipeline(); !reflect.DeepEqual(gotTotalPipeline, wantTotalPipeline) {
+				t.Errorf("DataState.getTotalPipeline() = %v, want %v", gotTotalPipeline, wantTotalPipeline)
+			}
+		})
+
+		t.Run("Should return pipeline with filters if present", func(t *testing.T) {
+			ds := DataState{
+				Filter: CompositeFilterDescriptor{
+					Logic: "and",
+					Filters: []FilterDescriptor{
+						{
+							Field:    "name",
+							Operator: "eq",
+							Value:    "John",
+						},
+					},
+				},
+			}
+
+			wantTotalPipeline := append(ds.getBasePipeline(), []bson.M{
+				{"$match": ds.getFilter()},
+				{"$count": "total"},
+			}...)
+
+			if gotTotalPipeline := ds.getTotalPipeline(); !reflect.DeepEqual(gotTotalPipeline, wantTotalPipeline) {
+				t.Errorf("DataState.getTotalPipeline() = %v, want %v", gotTotalPipeline, wantTotalPipeline)
+			}
+		})
+
+		t.Run("Should lookup if a filter is done on the lookup field", func(t *testing.T) {
+			ds := DataState{
+				Filter: CompositeFilterDescriptor{
+					Logic: "and",
+					Filters: []FilterDescriptor{
+						{
+							Field:    "owner.name",
+							Operator: "eq",
+							Value:    "John",
+						},
+					},
+				},
+				Lookup: []LookupDescriptor{
+					{
+						From:         "users",
+						LocalField:   "owner",
+						ForeignField: "_id",
+						As:           "owner",
+					},
+				},
+			}
+
+			wantTotalPipeline := append(ds.getBasePipeline(), []bson.M{
+				{
+					"$lookup": bson.M{
+						"from":         "users",
+						"localField":   "owner",
+						"foreignField": "_id",
+						"as":           "owner",
+					},
+				},
+				{"$match": ds.getFilter()},
+				{"$count": "total"},
+			}...)
+
+			if gotTotalPipeline := ds.getTotalPipeline(); !reflect.DeepEqual(gotTotalPipeline, wantTotalPipeline) {
+				t.Errorf("DataState.getTotalPipeline() = %v, want %v", gotTotalPipeline, wantTotalPipeline)
+			}
+		})
+
+		t.Run("Should not lookup if there is no filters on the lookup field", func(t *testing.T) {
+			ds := DataState{
+				Filter: CompositeFilterDescriptor{
+					Logic: "and",
+					Filters: []FilterDescriptor{
+						{
+							Field:    "name",
+							Operator: "eq",
+							Value:    "John",
+						},
+					},
+				},
+				Lookup: []LookupDescriptor{
+					{
+						From:         "users",
+						LocalField:   "owner",
+						ForeignField: "_id",
+						As:           "owner",
+					},
+				},
+			}
+
+			wantTotalPipeline := append(ds.getBasePipeline(), []bson.M{
+				{"$match": ds.getFilter()},
+				{"$count": "total"},
+			}...)
+
+			if gotTotalPipeline := ds.getTotalPipeline(); !reflect.DeepEqual(gotTotalPipeline, wantTotalPipeline) {
+				t.Errorf("DataState.getTotalPipeline() = %v, want %v", gotTotalPipeline, wantTotalPipeline)
 			}
 		})
 	})

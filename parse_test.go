@@ -78,7 +78,7 @@ func TestDataState_WithLookups(t *testing.T) {
 func TestDataState_WithPreprocessing(t *testing.T) {
 	t.Run("Should set DataState preprocessing field", func(t *testing.T) {
 		preprocessing := []bson.M{
-			bson.M{
+			{
 				"$addFields": bson.M{
 					"cats": 20,
 				},

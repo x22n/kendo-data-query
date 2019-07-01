@@ -8,8 +8,9 @@ import (
 	"github.com/globalsign/mgo/bson"
 )
 
-func (d *DataState) Apply(collection mgo.Collection) (dataResult DataResult) {
-	if err := d.parse(); err != nil {
+// Apply will parse the request values and retrieves the DataResult from a collection
+func (d *DataState) Apply(collection mgo.Collection) (dataResult DataResult, err error) {
+	if err = d.parse(); err != nil {
 		return
 	}
 
@@ -22,12 +23,11 @@ func (d *DataState) Apply(collection mgo.Collection) (dataResult DataResult) {
 
 	data := []interface{}{}
 	err = aggregate.All(&data)
-	fmt.Println(err)
 
 	return DataResult{
 		Data:  data,
 		Total: total,
-	}
+	}, nil
 }
 
 func (d *DataState) getBasePipeline() (pipeline []bson.M) {
@@ -297,7 +297,7 @@ func (d *DataState) getFilter() (filter bson.M) {
 	filter = bson.M{}
 
 	for _, f := range d.Filter.Filters {
-		f.Filter(filter)
+		f.filter(filter)
 	}
 
 	return
@@ -325,7 +325,7 @@ func (d *DataState) getPaging() (paging []bson.M) {
 	page := d.Page - 1
 
 	return []bson.M{
-		bson.M{"$skip": page * d.PageSize},
-		bson.M{"$limit": d.PageSize},
+		{"$skip": page * d.PageSize},
+		{"$limit": d.PageSize},
 	}
 }
